@@ -656,79 +656,79 @@ def main():
     contriever_searcher = FaissSearcher('contriever_fb_relation/freebase_contriever_index', query_encoder)
     hsearcher = HybridSearcher(contriever_searcher, bm25_searcher)
     rela_corpus = LuceneSearcher('contriever_fb_relation/index_relation_fb')
-    print(rela_corpus)
-    print(bm25_searcher)
-#     dev_data = process_file(args.eva_data_path)
-#     train_data = process_file(args.train_data_path)
-#     que_to_s_dict_train = {data["question"]: data["s_expression"] for data in train_data}
-#     question_to_mid_dict = process_file_node(args.train_data_path)
-#     exp_result=json.load(open(args.exp_result))
-#     result_path = args.exp_result.split(".json")[0]+"_result.json"
-#     temp_result_path = args.exp_result.split(".json")[0]+"_temp_result.json"
-#     output = process_temp_result(temp_result_path)
-# #    exp_result=json.load(open("/data/tianyuhang/repos/SE-KBQA/GrailQA/outputs/grailqa_dev_expression_result_beam_search_3hop_v3_llama_v1.json"))
-#     exp_result = dict(list(exp_result.items())[args.checkpoint:])
-#     if not args.retrieval:
-#         selected_quest_compose, selected_quest_compare, selected_quest = select_shot_prompt_train(train_data, args.shot_num)
-#     else:
-#         selected_quest_compose = []
-#         selected_quest_compare = []
-#         selected_quest = []
-#     all_ques = selected_quest_compose + selected_quest_compare
-#     corpus = [data["question"] for data in train_data]
-#     tokenized_train_data = []
-#     for doc in corpus:
-#         nlp_doc = nlp(doc)
-#         tokenized_train_data.append([token.lemma_ for token in nlp_doc])
-#     bm25_train_full = BM25Okapi(tokenized_train_data)
-#     if not args.retrieval:
-#         prompt_type = ''
-#         random.shuffle(all_ques)
-#         for que in all_ques:
-#             prompt_type = prompt_type + "Question: " + que + "\nType of the question: "
-#             if que in selected_quest_compose:
-#                 prompt_type += "Composition\n"
-#             else:
-#                 prompt_type += "Comparison\n"
-#     else:
-#         prompt_type = ''
-#     print("Begin to process fb_roles")
-#     with open(args.fb_roles_path) as f:
-#         lines = f.readlines()
-#     relationships = []
-#     entities_set = []
-#     relationship_to_enti = {}
-#     for line in lines:
-#         info = line.split(" ")
-#         relationships.append(info[1])
-#         entities_set.append(info[0])
-#         entities_set.append(info[2])
-#         relationship_to_enti[info[1]] = [info[0], info[2]]
+    # print(rela_corpus)
+    # print(bm25_searcher)
+    dev_data = process_file(args.eva_data_path)
+    train_data = process_file(args.train_data_path)
+    que_to_s_dict_train = {data["question"]: data["s_expression"] for data in train_data}
+    question_to_mid_dict = process_file_node(args.train_data_path)
+    exp_result=json.load(open(args.exp_result))
+    result_path = args.exp_result.split(".json")[0]+"_result.json"
+    temp_result_path = args.exp_result.split(".json")[0]+"_temp_result.json"
+    output = process_temp_result(temp_result_path)
+#    exp_result=json.load(open("/data/tianyuhang/repos/SE-KBQA/GrailQA/outputs/grailqa_dev_expression_result_beam_search_3hop_v3_llama_v1.json"))
+    exp_result = dict(list(exp_result.items())[args.checkpoint:])
+    if not args.retrieval:
+        selected_quest_compose, selected_quest_compare, selected_quest = select_shot_prompt_train(train_data, args.shot_num)
+    else:
+        selected_quest_compose = []
+        selected_quest_compare = []
+        selected_quest = []
+    all_ques = selected_quest_compose + selected_quest_compare
+    corpus = [data["question"] for data in train_data]
+    tokenized_train_data = []
+    for doc in corpus:
+        nlp_doc = nlp(doc)
+        tokenized_train_data.append([token.lemma_ for token in nlp_doc])
+    bm25_train_full = BM25Okapi(tokenized_train_data)
+    if not args.retrieval:
+        prompt_type = ''
+        random.shuffle(all_ques)
+        for que in all_ques:
+            prompt_type = prompt_type + "Question: " + que + "\nType of the question: "
+            if que in selected_quest_compose:
+                prompt_type += "Composition\n"
+            else:
+                prompt_type += "Comparison\n"
+    else:
+        prompt_type = ''
+    print("Begin to process fb_roles")
+    with open(args.fb_roles_path) as f:
+        lines = f.readlines()
+    relationships = []
+    entities_set = []
+    relationship_to_enti = {}
+    for line in lines:
+        info = line.split(" ")
+        relationships.append(info[1])
+        entities_set.append(info[0])
+        entities_set.append(info[2])
+        relationship_to_enti[info[1]] = [info[0], info[2]]
 
-#     print("Procss fb_roles done!")
-#     with open(args.surface_map_path) as f:
-#         lines = f.readlines()
-#     name_to_id_dict = {}
-#     for line in lines:
-#         info = line.split("\t")
-#         name = info[0]
-#         score = float(info[1])
-#         mid = info[2].strip()
-#         if name in name_to_id_dict:
-#             name_to_id_dict[name][mid] = score
-#         else:
-#             name_to_id_dict[name] = {}
-#             name_to_id_dict[name][mid] = score
-#     all_fns = list(name_to_id_dict.keys())
-#     tokenized_all_fns = [fn.split() for fn in all_fns]
-#     bm25_all_fns = BM25Okapi(tokenized_all_fns)
-#     print("Load Done!")
-#     #dev_data = dev_data[:2000]
-#     all_combiner_evaluation(dev_data, selected_quest_compose, selected_quest_compare, selected_quest, prompt_type,
-#                             hsearcher, rela_corpus, relationships, args.temperature, que_to_s_dict_train,
-#                             question_to_mid_dict, args.api_key, args.engine, name_to_id_dict, bm25_all_fns,
-#                             all_fns, relationship_to_enti, retrieval=args.retrieval, corpus=corpus, nlp_model=nlp,
-#                             bm25_train_full=bm25_train_full, retrieve_number=args.shot_num,exp_result=exp_result,output=output,result_path=result_path)
+    print("Procss fb_roles done!")
+    with open(args.surface_map_path) as f:
+        lines = f.readlines()
+    name_to_id_dict = {}
+    for line in lines:
+        info = line.split("\t")
+        name = info[0]
+        score = float(info[1])
+        mid = info[2].strip()
+        if name in name_to_id_dict:
+            name_to_id_dict[name][mid] = score
+        else:
+            name_to_id_dict[name] = {}
+            name_to_id_dict[name][mid] = score
+    all_fns = list(name_to_id_dict.keys())
+    tokenized_all_fns = [fn.split() for fn in all_fns]
+    bm25_all_fns = BM25Okapi(tokenized_all_fns)
+    print("Load Done!")
+    #dev_data = dev_data[:2000]
+    all_combiner_evaluation(dev_data, selected_quest_compose, selected_quest_compare, selected_quest, prompt_type,
+                            hsearcher, rela_corpus, relationships, args.temperature, que_to_s_dict_train,
+                            question_to_mid_dict, args.api_key, args.engine, name_to_id_dict, bm25_all_fns,
+                            all_fns, relationship_to_enti, retrieval=args.retrieval, corpus=corpus, nlp_model=nlp,
+                            bm25_train_full=bm25_train_full, retrieve_number=args.shot_num,exp_result=exp_result,output=output,result_path=result_path)
 
 if __name__=="__main__":
     main()
