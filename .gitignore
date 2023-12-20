@@ -1,4 +1,6 @@
 contriever_fb_relation/freebase_contriever_index/index
+/result
+
 /data
 data/fb_roles
 data/fn_index_10000.pkl
