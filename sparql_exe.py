@@ -1,13 +1,13 @@
 from typing import List, Tuple
+import logging
 from SPARQLWrapper import SPARQLWrapper, JSON
 import json
 import urllib
 from pathlib import Path
 from tqdm import tqdm
-
-sparql = SPARQLWrapper("http://129.97.152.19:3001/sparql")
+sparql = SPARQLWrapper("http://localhost:3001/sparql")
 sparql.setReturnFormat(JSON)
-
+out_file = open('output','w')
 path = str(Path(__file__).parent.absolute())
 
 with open(path + '/data/fb_roles', 'r') as f:
@@ -284,7 +284,8 @@ def execute_query(query: str) -> List[str]:
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query)
-        exit(0)
+        #exit(0)
+        return []
     rtn = []
     for result in results['results']['bindings']:
         assert len(result) == 1  # only select one variable
@@ -313,7 +314,8 @@ def execute_unary(type: str) -> List[str]:
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query)
-        exit(0)
+        #exit(0)
+        return []
     rtn = []
     for result in results['results']['bindings']:
         rtn.append(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
@@ -338,7 +340,8 @@ def execute_binary(relation: str) -> List[Tuple[str, str]]:
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query)
-        exit(0)
+        #exit(0)
+        return []
     rtn = []
     for result in results['results']['bindings']:
         rtn.append((result['x0']['value'], result['x1']['value']))
@@ -365,7 +368,8 @@ def get_types(entity: str) -> List[str]:
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query)
-        exit(0)
+        #exit(0)
+        return []
     rtn = []
     for result in results['results']['bindings']:
         rtn.append(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
@@ -422,7 +426,8 @@ def get_friendly_name(entity: str) -> str:
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query)
-        exit(0)
+        #exit(0)
+        return ""
     rtn = []
     for result in results['results']['bindings']:
         if result['value']['xml:lang'] == 'en':
@@ -447,7 +452,8 @@ def get_friendly_name(entity: str) -> str:
             results = sparql.query().convert()
         except urllib.error.URLError:
             print(query)
-            exit(0)
+            #exit(0)
+            return "" 
         for result in results['results']['bindings']:
             if result['value']['xml:lang'] == 'en':
                 rtn.append(result['value']['value'])
@@ -477,7 +483,8 @@ def get_degree(entity: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query1)
-        exit(0)
+        #exit(0)
+        return
     for result in results['results']['bindings']:
         degree += int(result['value']['value'])
 
@@ -498,7 +505,8 @@ def get_degree(entity: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query2)
-        exit(0)
+        #exit(0)
+        return
     for result in results['results']['bindings']:
         degree += int(result['value']['value'])
 
@@ -528,7 +536,8 @@ def get_in_attributes(value: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query1)
-        exit(0)
+        #exit(0)
+        return
     for result in results['results']['bindings']:
         in_attributes.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -558,7 +567,8 @@ def get_in_relations(entity: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query1)
-        exit(0)
+        #exit(0)
+        return 
     for result in results['results']['bindings']:
         in_relations.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -588,7 +598,7 @@ def get_in_entities(entity: str, relation: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query1)
-        exit(0)
+        #exit(0)
     for result in results['results']['bindings']:
         neighbors.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -618,7 +628,7 @@ def get_in_entities_for_literal(value: str, relation: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query1)
-        exit(0)
+        #exit(0)
     for result in results['results']['bindings']:
         neighbors.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -648,7 +658,7 @@ def get_out_relations(entity: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query2)
-        exit(0)
+        #exit(0)
     for result in results['results']['bindings']:
         out_relations.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -678,7 +688,7 @@ def get_out_entities(entity: str, relation: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query2)
-        exit(0)
+        #exit(0)
     for result in results['results']['bindings']:
         neighbors.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -711,7 +721,7 @@ def get_entities_cmp(value, relation: str, cmp: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query2)
-        exit(0)
+        #exit(0)
     for result in results['results']['bindings']:
         neighbors.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -741,7 +751,7 @@ def get_adjacent_relations(entity: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query1)
-        exit(0)
+        #exit(0)
     for result in results['results']['bindings']:
         in_relations.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -764,7 +774,7 @@ def get_adjacent_relations(entity: str):
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query2)
-        exit(0)
+        #exit(0)
     for result in results['results']['bindings']:
         out_relations.add(result['value']['value'].replace('http://rdf.freebase.com/ns/', ''))
 
@@ -773,8 +783,8 @@ def get_adjacent_relations(entity: str):
 
 def get_2hop_relations_from_2entities(entity0: str, entity1: str):  # m.027lnzs  m.0zd6  3200017000000
     query = ("""
-            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
             PREFIX : <http://rdf.freebase.com/ns/>
             SELECT distinct ?x0 as ?r0 ?y as ?r1 WHERE {
             """
@@ -792,7 +802,6 @@ def get_2hop_relations(entity: str):
     in_relations = set()
     out_relations = set()
     paths = []
-
     query1 = ("""
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -806,11 +815,18 @@ def get_2hop_relations(entity: str):
                   FILTER regex(?y, "http://rdf.freebase.com/ns/")
                   }
                   """)
-
-    sparql.setQuery(query1)
+    sparql = SPARQLWrapper("http://localhost:3001/sparql")
+    sparql.setReturnFormat(JSON)
+    
+    try:
+        sparql.setQuery(query1)
+    except Exception as e:
+        out_file.write(e)
+        #logger.info("Exception is {}".format(e))
     try:
         results = sparql.query().convert()
-    except urllib.error.URLError:
+    except urllib.error.URLError as e:
+        print(e)
         print(query1)
         exit(0)
     for result in results['results']['bindings']:
@@ -932,7 +948,6 @@ def get_label(entity: str) -> str:
         results = sparql.query().convert()
     except urllib.error.URLError:
         print(query)
-        exit(0)
     rtn = []
     for result in results['results']['bindings']:
         label = result['label']['value']
@@ -941,3 +956,4 @@ def get_label(entity: str) -> str:
         return rtn[0]
     else:
         return None
+

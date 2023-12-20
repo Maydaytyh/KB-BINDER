@@ -73,12 +73,25 @@ def sub_mid_to_fn(question, string, question_to_mid_dict):
 
 def type_generator(question, prompt_type, api_key, LLM_engine):
     sleep(1)
+    # prompt = 'I will provide 40 exapmles of question and its type. At last, I will give you a question without type. You need to generate the question type just for the last one question. You output format should be "The type of question: " and the type of the question, no more other words. Remeber, you should just generate the type for the last question.\n'
     prompt = prompt_type
+    prompt += "I provide 40 exapmles of question and its type.  You need to generate the question type just for the following question. Your output format should be \"The type of question: \" and the type of the question, no more other words. Remeber, you should just generate the type for the following question.\n"
     prompt = prompt + " Question: " + question + "Type of the question: "
     got_result = False
     while got_result != True:
         try:
-            openai.api_key = api_key
+            openai.api_key = "none"
+            openai.api_base = "http://127.0.0.1:8090/v1"
+            # logger.info("prompt: {}".format(prompt))
+            answer_modi = openai.ChatCompletion.create(
+                    model='meta-llama/Llama-2-13b-chat-hf',
+                    messages=[
+                        {"role":"user","content":prompt}
+                        ],
+                    stream=False,
+                    stop=[]
+                    )
+            '''
             answer_modi = openai.Completion.create(
                 engine=LLM_engine,
                 prompt=prompt,
@@ -89,12 +102,12 @@ def type_generator(question, prompt_type, api_key, LLM_engine):
                 presence_penalty=0,
                 stop=["Question: "]
             )
+            '''
             got_result = True
         except:
             sleep(3)
-    gene_exp = answer_modi["choices"][0]["text"].strip()
+    gene_exp = answer_modi.choices[0].message.content
     return gene_exp
-
 
 def ep_generator(question, selected_examples, temp, que_to_s_dict_train, question_to_mid_dict, api_key, LLM_engine,
                  retrieval=False, corpus=None, nlp_model=None, bm25_train_full=None, retrieve_number=100):
@@ -108,30 +121,48 @@ def ep_generator(question, selected_examples, temp, que_to_s_dict_train, questio
         logger.info("top related questions: {}".format(top_ques))
         selected_examples = top_ques
     prompt = ""
+    # prompt = 'I will provide 40 exapmles of question and its ture logical form. At last, I will give you a question without logical form. You need to generate the logical form just for the last one question. You output format should be "Logical form: " and the true logical form, no more other words. Remeber, you should just generate the logical form for the last question.\n'
     for que in selected_examples:
         if not que_to_s_dict_train[que]:
             continue
         prompt = prompt + "Question: " + que + "\n" + "Logical Form: " + sub_mid_to_fn(que, que_to_s_dict_train[que], question_to_mid_dict) + "\n"
+    prompt+="""
+I provide 40 exapmles of question and its logical form.  You need to generate the logical form just for the following question. Your output format should be "Logical Form: " and the logical form of the question, no more other words. Remeber, you should just generate the logical form for the following question."""
     prompt = prompt + "Question: " + question + "\n" + "Logical Form: "
     got_result = False
+    #print(prompt)
+
     while got_result != True:
         try:
-            openai.api_key = api_key
+            openai.api_key = "none"
+            openai.api_base = "http://127.0.0.1:8090/v1"
+            answer_modi = openai.ChatCompletion.create(
+                    model='meta-llama/Llama-2-13b-chat-hf',
+                    messages=[
+                        {"role":"user","content":prompt}
+                        ],
+                    stream=False,
+                    stop=[]
+                    )
+            #print(answer_modi)
+            '''
             answer_modi = openai.Completion.create(
                 engine=LLM_engine,
                 prompt=prompt,
-                temperature=temp,
+                temperature=0,
                 max_tokens=256,
                 top_p=1,
                 frequency_penalty=0,
                 presence_penalty=0,
-                stop=["Question: "],
-                n=7
+                stop=["Question: "]
             )
+            '''
             got_result = True
         except:
             sleep(3)
-    gene_exp = [exp["text"].strip() for exp in answer_modi["choices"]]
+    #gene_exp = [exp["text"].strip() for exp in answer_modi["choices"]]
+    gene_exp=answer_modi.choices[0].message.content
+  #  print(gene_exp)
     return gene_exp
 
 
@@ -323,7 +354,7 @@ def bound_to_existed(question, s_expression, found_mids, two_hop_rela_dict,
                         not cur_rela.endswith("_inv.") and len(cur_rela.split('.')) > 2 and \
                         cur_rela in possible_relationships:
                     top3_ques.append(cur_rela)
-            logger.info("top3_ques rela: {}".format(top3_ques))
+            # logger.info("top3_ques rela: {}".format(top3_ques))
             relationship_replace_dict[i] = top3_ques[:7]
     if len(relationship_replace_dict) > 5:
         return None, updating_two_hop_rela_dict, None
@@ -416,14 +447,51 @@ def process_file_codex_output(filename_before, filename_after):
         codex_eps_dict_before[key] = codex_eps_dict_after[key]
     return codex_eps_dict_before
 
+def get_expression(data_batch,selected_quest_compare,selected_quest_compose, selected_quest,prompt_type,temp,que_to_s_dict_train,question_to_mid_dict,api_key,LLM_engine,retrieval=False,
+                   corpus=None,nlp_model=None,bm25_train_full=None,retrieve_number=100,exp_result=None):
+    result_path = "data/GrailQA/grailqa_dev_expression_llama2_dev_1000_20231211_original_prompt.json"
+    exp_result = {}
+    for data in data_batch:
+        logger.info("==========")
+        logger.info("data[id]: {}".format(data["id"]))
+        logger.info("data[question]: {}".format(data["question"]))
+        logger.info("data[exp]: {}".format(data["s_expression"]))
+        label = []
+        for ans in data["answer"]:
+            label.append(ans["answer_argument"])
+        if not retrieval:
+            gene_type = type_generator(data["question"], prompt_type, api_key, LLM_engine)
+            logger.info("gene_type: {}".format(gene_type))
+        else:
+            gene_type = None
+
+        if "Comparison" in gene_type:
+            # gene_type == "Comparison":
+            gene_exps = ep_generator(data["question"],
+                                     list(set(selected_quest_compare) | set(selected_quest)),
+                                     temp, que_to_s_dict_train, question_to_mid_dict, api_key, LLM_engine,
+                                     retrieval=retrieval, corpus=corpus, nlp_model=nlp_model,
+                                     bm25_train_full=bm25_train_full, retrieve_number=retrieve_number)
+        else:
+            gene_exps = ep_generator(data["question"],
+                                     list(set(selected_quest_compose) | set(selected_quest)),
+                                     temp, que_to_s_dict_train, question_to_mid_dict, api_key, LLM_engine,
+                                     retrieval=retrieval, corpus=corpus, nlp_model=nlp_model,
+                                     bm25_train_full=bm25_train_full, retrieve_number=retrieve_number)
+        exp_result[data["id"]] = gene_exps
+        logger.info("gene_exps: {}".format(gene_exps))
+    json.dump(exp_result, open(result_path, 'w'), indent=4)
 def all_combiner_evaluation(data_batch, selected_quest_compare, selected_quest_compose, selected_quest,
                             prompt_type, hsearcher, rela_corpus, relationships, temp, que_to_s_dict_train,
                             question_to_mid_dict, api_key, LLM_engine, name_to_id_dict, bm25_all_fns, all_fns,
                             relationship_to_enti, retrieval=False, corpus=None, nlp_model=None, bm25_train_full=None,
-                            retrieve_number=100):
+                            retrieve_number=100,exp_result=None):
+    result_path = "data/GrailQA/grailqa_dev_expression_llama2_dev_1000_20231211_original_prompt.json"
+    exp_result = {}
     correct = [0] * 6
     total = [0] * 6
     no_ans = [0] * 6
+    number=0
     for data in data_batch:
         logger.info("==========")
         logger.info("data[id]: {}".format(data["id"]))
@@ -450,73 +518,90 @@ def all_combiner_evaluation(data_batch, selected_quest_compare, selected_quest_c
                                      temp, que_to_s_dict_train, question_to_mid_dict, api_key, LLM_engine,
                                      retrieval=retrieval, corpus=corpus, nlp_model=nlp_model,
                                      bm25_train_full=bm25_train_full, retrieve_number=retrieve_number)
-        two_hop_rela_dict = {}
-        answer_candi = []
-        removed_none_candi = []
-        answer_to_grounded_dict = {}
+        exp_result[data["id"]] = gene_exps
         logger.info("gene_exps: {}".format(gene_exps))
-        scouts = gene_exps[:6]
-        for idx, gene_exp in enumerate(scouts):
-            try:
-                logger.info("gene_exp: {}".format(gene_exp))
-                join_num = number_of_join(gene_exp)
-                if join_num > 5:
-                    continue
-                if join_num > 3:
-                    top_mid = 5
-                else:
-                    top_mid = 15
-                found_names = find_friend_name(gene_exp, data["question"])
-                found_mids = from_fn_to_id_set(found_names, data["question"], name_to_id_dict, bm25_all_fns, all_fns)
-                found_mids = [mids[:top_mid] for mids in found_mids]
-                mid_combinations = list(itertools.product(*found_mids))
-                logger.info("all_iters: {}".format(mid_combinations))
-                for mid_iters in mid_combinations:
-                    logger.info("mid_iters: {}".format(mid_iters))
-                    replaced_exp = convz_fn_to_mids(gene_exp, found_names, mid_iters)
+        #number+=1
+        #logger.info("number: {}".format(number))
+        # id = int(data["id"])
+        # logger.info()
+     
+        # gene_exps = exp_result[str(data["id"])]['response']
+        # # logger.info("gene_exp: {}".format(gene_exps))
+        # if "form:" in gene_exps:
+        #     gene_exps =  gene_exps.split("form:")[1]
+        # # logger.info("gene_exp: {}".format(gene_exps))
+        # two_hop_rela_dict = {}
+        # answer_candi = []
+        # removed_none_candi = []
+        # answer_to_grounded_dict = {}
+        # # logger.info("gene_exps: {}".format(gene_exps))
+        # #scouts = gene_exps[:6]
+        # scouts = [gene_exps]
+        # for idx, gene_exp in enumerate(scouts):
+        #     try:
+        #         # logger.info("gene_exp: {}".format(gene_exp))
+        #         join_num = number_of_join(gene_exp)
+        #         if join_num > 5:
+        #             continue
+        #         if join_num > 3:
+        #             top_mid = 5
+        #         else:
+        #             top_mid = 15
+        #         found_names = find_friend_name(gene_exp, data["question"])
+        #         found_mids = from_fn_to_id_set(found_names, data["question"], name_to_id_dict, bm25_all_fns, all_fns)
+        #         found_mids = [mids[:top_mid] for mids in found_mids]
+        #         mid_combinations = list(itertools.product(*found_mids))
+        #         logger.info("all_iters: {}".format(mid_combinations))
+        #         for mid_iters in mid_combinations:
+        #             # logger.info("mid_iters: {}".format(mid_iters))
+        #             replaced_exp = convz_fn_to_mids(gene_exp, found_names, mid_iters)
 
-                    answer, two_hop_rela_dict, bounded_exp = bound_to_existed(data["question"], replaced_exp, mid_iters,
-                                                                              two_hop_rela_dict, relationship_to_enti,
-                                                                              hsearcher, rela_corpus, relationships)
-                    answer_candi.append(answer)
-                    if answer is not None:
-                        answer_to_grounded_dict[tuple(answer)] = bounded_exp
-                for ans in answer_candi:
-                    if ans != None:
-                        removed_none_candi.append(ans)
-                if not removed_none_candi:
-                    answer = None
-                else:
-                    count_dict = Counter([tuple(candi) for candi in removed_none_candi])
-                    logger.info("count_dict: {}".format(count_dict))
-                    answer = max(count_dict, key=count_dict.get)
-            except:
-                if not removed_none_candi:
-                    answer = None
-                else:
-                    count_dict = Counter([tuple(candi) for candi in removed_none_candi])
-                    logger.info("count_dict: {}".format(count_dict))
-                    answer = max(count_dict, key=count_dict.get)
-            answer_to_grounded_dict[None] = ""
-            logger.info("predicted_answer: {}".format(answer))
-            logger.info("label: {}".format(label))
-            if answer is None:
-                no_ans[idx] += 1
-            elif set(answer) == set(label):
-                correct[idx] += 1
-            total[idx] += 1
-            em_score = correct[idx] / total[idx]
-            logger.info("================================================================")
-            logger.info("consistent candidates number: {}".format(idx+1))
-            logger.info("em_score: {}".format(em_score))
-            logger.info("correct: {}".format(correct[idx]))
-            logger.info("total: {}".format(total[idx]))
-            logger.info("no_ans: {}".format(no_ans[idx]))
-            logger.info(" ")
-            logger.info("================================================================")
+        #             answer, two_hop_rela_dict, bounded_exp = bound_to_existed(data["question"], replaced_exp, mid_iters,
+        #                                                                       two_hop_rela_dict, relationship_to_enti,
+        #                                                                       hsearcher, rela_corpus, relationships)
+        #             answer_candi.append(answer)
+        #             if answer is not None:
+        #                 answer_to_grounded_dict[tuple(answer)] = bounded_exp
+        #         for ans in answer_candi:
+        #             if ans != None:
+        #                 removed_none_candi.append(ans)
+        #         if not removed_none_candi:
+        #             answer = None
+        #         else:
+        #             count_dict = Counter([tuple(candi) for candi in removed_none_candi])
+        #             logger.info("count_dict: {}".format(count_dict))
+        #             answer = max(count_dict, key=count_dict.get)
+        #     except:
+        #         if not removed_none_candi:
+        #             answer = None
+        #         else:
+        #             count_dict = Counter([tuple(candi) for candi in removed_none_candi])
+        #             logger.info("count_dict: {}".format(count_dict))
+        #             answer = max(count_dict, key=count_dict.get)
+        #     answer_to_grounded_dict[None] = ""
+        #     logger.info("predicted_answer: {}".format(answer))
+        #     logger.info("label: {}".format(label))
+        #     if answer is None:
+        #         no_ans[idx] += 1
+        #     elif set(answer) == set(label):
+        #         correct[idx] += 1
+        #     total[idx] += 1
+        #     em_score = correct[idx] / total[idx]
+        #     logger.info("================================================================")
+        #     logger.info("consistent candidates number: {}".format(idx+1))
+        #     logger.info("em_score: {}".format(em_score))
+        #     logger.info("correct: {}".format(correct[idx]))
+        #     logger.info("total: {}".format(total[idx]))
+        #     logger.info("no_ans: {}".format(no_ans[idx]))
+        #     logger.info(" ")
+        #     logger.info("================================================================")
+    json.dump(exp_result, open(result_path, 'w'), indent=4)
 
 
 
+def load_exp(exp_path):
+    data=json.load(open("../SE-KBQA/GrailQA/outputs/grailqa_dev_expression_result.json"))
+    result = {}
 
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -533,7 +618,7 @@ def parse_args():
     parser.add_argument('--train_data_path', type=str, metavar='N',
                         default="data/GrailQA/grailqa_v1.0_train.json", help='training data path')
     parser.add_argument('--eva_data_path', type=str, metavar='N',
-                        default="data/GrailQA/grailqa_v1.0_dev.json", help='evaluation data path')
+                        default="data/GrailQA/grailqa_v1.0_dev_1000.json", help='evaluation data path')
     parser.add_argument('--fb_roles_path', type=str, metavar='N',
                         default="data/GrailQA/fb_roles", help='freebase roles file path')
     parser.add_argument('--surface_map_path', type=str, metavar='N',
@@ -545,15 +630,17 @@ def parse_args():
 def main():
     args = parse_args()
     nlp = spacy.load("en_core_web_sm")
-    bm25_searcher = LuceneSearcher('contriever_fb_relation/index_relation_fb')
-    query_encoder = AutoQueryEncoder(encoder_dir='facebook/contriever', pooling='mean')
-    contriever_searcher = FaissSearcher('contriever_fb_relation/freebase_contriever_index', query_encoder)
-    hsearcher = HybridSearcher(contriever_searcher, bm25_searcher)
-    rela_corpus = LuceneSearcher('contriever_fb_relation/index_relation_fb')
+    # bm25_searcher = LuceneSearcher('contriever_fb_relation/index_relation_fb')
+    # query_encoder = AutoQueryEncoder(encoder_dir='facebook/contriever', pooling='mean')
+    # contriever_searcher = FaissSearcher('contriever_fb_relation/freebase_contriever_index', query_encoder)
+    # hsearcher = HybridSearcher(contriever_searcher, bm25_searcher)
+    # rela_corpus = LuceneSearcher('contriever_fb_relation/index_relation_fb')
     dev_data = process_file(args.eva_data_path)
     train_data = process_file(args.train_data_path)
     que_to_s_dict_train = {data["question"]: data["s_expression"] for data in train_data}
     question_to_mid_dict = process_file_node(args.train_data_path)
+    # exp_result=json.load(open("../SE-KBQA/GrailQA/outputs/grailqa_dev_expression_result_back.json"))
+    
     if not args.retrieval:
         selected_quest_compose, selected_quest_compare, selected_quest = select_shot_prompt_train(train_data, args.shot_num)
     else:
@@ -561,12 +648,13 @@ def main():
         selected_quest_compare = []
         selected_quest = []
     all_ques = selected_quest_compose + selected_quest_compare
-    corpus = [data["question"] for data in train_data]
-    tokenized_train_data = []
-    for doc in corpus:
-        nlp_doc = nlp(doc)
-        tokenized_train_data.append([token.lemma_ for token in nlp_doc])
-    bm25_train_full = BM25Okapi(tokenized_train_data)
+    # corpus = [data["question"] for data in train_data]
+    # tokenized_train_data = []
+    # for doc in corpus:
+    #     nlp_doc = nlp(doc)
+    #     tokenized_train_data.append([token.lemma_ for token in nlp_doc])
+    bm25_train_full = None
+    # bm25_train_full = BM25Okapi(tokenized_train_data)
     if not args.retrieval:
         prompt_type = ''
         random.shuffle(all_ques)
@@ -578,39 +666,46 @@ def main():
                 prompt_type += "Comparison\n"
     else:
         prompt_type = ''
-    with open(args.fb_roles_path) as f:
-        lines = f.readlines()
-    relationships = []
-    entities_set = []
-    relationship_to_enti = {}
-    for line in lines:
-        info = line.split(" ")
-        relationships.append(info[1])
-        entities_set.append(info[0])
-        entities_set.append(info[2])
-        relationship_to_enti[info[1]] = [info[0], info[2]]
+    print("Begin to process fb_roles")
+    # with open(args.fb_roles_path) as f:
+    #     lines = f.readlines()
+    # relationships = []
+    # entities_set = []
+    # relationship_to_enti = {}
+    # for line in lines:
+    #     info = line.split(" ")
+    #     relationships.append(info[1])
+    #     entities_set.append(info[0])
+    #     entities_set.append(info[2])
+    #     relationship_to_enti[info[1]] = [info[0], info[2]]
 
-    with open(args.surface_map_path) as f:
-        lines = f.readlines()
-    name_to_id_dict = {}
-    for line in lines:
-        info = line.split("\t")
-        name = info[0]
-        score = float(info[1])
-        mid = info[2].strip()
-        if name in name_to_id_dict:
-            name_to_id_dict[name][mid] = score
-        else:
-            name_to_id_dict[name] = {}
-            name_to_id_dict[name][mid] = score
-    all_fns = list(name_to_id_dict.keys())
-    tokenized_all_fns = [fn.split() for fn in all_fns]
-    bm25_all_fns = BM25Okapi(tokenized_all_fns)
-    all_combiner_evaluation(dev_data, selected_quest_compose, selected_quest_compare, selected_quest, prompt_type,
-                            hsearcher, rela_corpus, relationships, args.temperature, que_to_s_dict_train,
-                            question_to_mid_dict, args.api_key, args.engine, name_to_id_dict, bm25_all_fns,
-                            all_fns, relationship_to_enti, retrieval=args.retrieval, corpus=corpus, nlp_model=nlp,
+    print("Procss fb_roles done!")
+    # with open(args.surface_map_path) as f:
+    #     lines = f.readlines()
+    # name_to_id_dict = {}
+    # for line in lines:
+    #     info = line.split("\t")
+    #     name = info[0]
+    #     score = float(info[1])
+    #     mid = info[2].strip()
+    #     if name in name_to_id_dict:
+    #         name_to_id_dict[name][mid] = score
+    #     else:
+    #         name_to_id_dict[name] = {}
+    #         name_to_id_dict[name][mid] = score
+    # all_fns = list(name_to_id_dict.keys())
+    # tokenized_all_fns = [fn.split() for fn in all_fns]
+    # bm25_all_fns = BM25Okapi(tokenized_all_fns)
+    print("Load Done!")
+    # dev_data= dev_data
+    get_expression(dev_data, selected_quest_compose, selected_quest_compare, selected_quest, prompt_type, args.temperature, que_to_s_dict_train,
+                            question_to_mid_dict, args.api_key, args.engine, retrieval=args.retrieval, corpus=None, nlp_model=nlp,
                             bm25_train_full=bm25_train_full, retrieve_number=args.shot_num)
+    # all_combiner_evaluation(dev_data, selected_quest_compose, selected_quest_compare, selected_quest, prompt_type,
+    #                         hsearcher, rela_corpus, relationships, args.temperature, que_to_s_dict_train,
+    #                         question_to_mid_dict, args.api_key, args.engine, name_to_id_dict, bm25_all_fns,
+    #                         all_fns, relationship_to_enti, retrieval=args.retrieval, corpus=corpus, nlp_model=nlp,
+    #                         bm25_train_full=bm25_train_full, retrieve_number=args.shot_num)
 
 if __name__=="__main__":
     main()
