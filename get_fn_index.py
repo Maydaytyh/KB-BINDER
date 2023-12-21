@@ -23,7 +23,7 @@ for line in lines:
 all_fns = list(name_to_id_dict.keys())
 # tokenized_all_fns = [fn.split() for fn in all_fns]
 print(len(all_fns))
-model.build_index(all_fns,batch_size=128)
+model.build_index(all_fns,batch_size=64)
 
 with open("data/fn_index.pkl", "wb") as f:
     pickle.dump(model.index, f)
