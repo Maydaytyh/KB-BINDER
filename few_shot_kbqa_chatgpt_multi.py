@@ -5,6 +5,7 @@ from sparql_exe import execute_query, get_types, get_2hop_relations, lisp_to_spa
 from utils import process_file, process_file_node, process_file_rela, process_file_test
 from rank_bm25 import BM25Okapi
 from time import sleep
+import time
 import re
 import logging
 from collections import Counter
@@ -72,93 +73,7 @@ def sub_mid_to_fn(question, string, question_to_mid_dict):
     return new_string
 
 
-def type_generator(question, prompt_type, api_key, LLM_engine):
-    sleep(1)
-    prompt = prompt_type
-    prompt = prompt + " Question: " + question + "Type of the question: "
-    got_result = False
-    while got_result != True:
-        try:
-            openai.api_key = "none"
-            openai.api_base = "http://127.0.0.1:8008/v1"
-            answer_modi = openai.ChatCompletion.create(
-                    model='Qwen-14B-Chat',
-                    messages=[
-                        {"role":"user","content":prompt}
-                        ],
-                    stream=False,
-                    stop=[]
-                    )
-            '''
-            answer_modi = openai.Completion.create(
-                engine=LLM_engine,
-                prompt=prompt,
-                temperature=0,
-                max_tokens=256,
-                top_p=1,
-                frequency_penalty=0,
-                presence_penalty=0,
-                stop=["Question: "]
-            )
-            '''
-            got_result = True
-        except:
-            sleep(3)
-    gene_exp = answer_modi.choices[0].message.content
-    return gene_exp
 
-def ep_generator(question, selected_examples, temp, que_to_s_dict_train, question_to_mid_dict, api_key, LLM_engine,
-                 retrieval=False, corpus=None, nlp_model=None, bm25_train_full=None, retrieve_number=100):
-    if retrieval:
-        tokenized_query = nlp_model(question)
-        tokenized_query = [token.lemma_ for token in tokenized_query]
-        top_ques = bm25_train_full.get_top_n(tokenized_query, corpus, n=retrieve_number)
-        doc_scores = bm25_train_full.get_scores(tokenized_query)
-        top_score = max(doc_scores)
-        logger.info("top_score: {}".format(top_score))
-        logger.info("top related questions: {}".format(top_ques))
-        selected_examples = top_ques
-    prompt = ""
-    for que in selected_examples:
-        if not que_to_s_dict_train[que]:
-            continue
-        prompt = prompt + "Question: " + que + "\n" + "Logical Form: " + sub_mid_to_fn(que, que_to_s_dict_train[que], question_to_mid_dict) + "\n"
-    prompt = prompt + "Question: " + question + "\n" + "Logical Form: "
-    got_result = False
-    #print(prompt)
-
-    while got_result != True:
-        try:
-            openai.api_key = "none"
-            openai.api_base = "http://127.0.0.1:8008/v1"
-            answer_modi = openai.ChatCompletion.create(
-                    model='Qwen-14B-Chat',
-                    messages=[
-                        {"role":"user","content":prompt}
-                        ],
-                    stream=False,
-                    stop=[]
-                    )
-            #print(answer_modi)
-            '''
-            answer_modi = openai.Completion.create(
-                engine=LLM_engine,
-                prompt=prompt,
-                temperature=0,
-                max_tokens=256,
-                top_p=1,
-                frequency_penalty=0,
-                presence_penalty=0,
-                stop=["Question: "]
-            )
-            '''
-            got_result = True
-        except:
-            sleep(3)
-    #gene_exp = [exp["text"].strip() for exp in answer_modi["choices"]]
-    gene_exp=answer_modi.choices[0].message.content
-  #  print(gene_exp)
-    return gene_exp
 
 
 def convert_to_frame(s_exp):
@@ -442,19 +357,109 @@ def process_file_codex_output(filename_before, filename_after):
         codex_eps_dict_before[key] = codex_eps_dict_after[key]
     return codex_eps_dict_before
 
-def all_combiner_evaluation(data_batch, selected_quest_compare, selected_quest_compose, selected_quest,
-                            prompt_type, hsearcher, rela_corpus, relationships, temp, que_to_s_dict_train,
-                            question_to_mid_dict, api_key, LLM_engine, name_to_id_dict, bm25_all_fns, all_fns,
-                            relationship_to_enti, retrieval=False, corpus=None, nlp_model=None, bm25_train_full=None,
-                            retrieve_number=100,exp_result=None,output=None,result_path=None):
-    # result_path = "/data/tianyuhang/repos/KB-BINDER/data/GrailQA/GrailQA_dev_llama2_exp.json"
-    #exp_result = {}
+number_of_get_answer = 0 
+def process_data(data,hsearcher, rela_corpus, relationships, name_to_id_dict,bm25_all_fns, all_fns,
+                            relationship_to_enti, exp_result=None,output=None,result_path=None):
+    if str(data["id"]) not in exp_result:
+        return
+    global number_of_get_answer
+    logger.info("==========")
+    logger.info("data[id]: {}".format(data["id"]))
+    logger.info("data[question]: {}".format(data["question"]))
+    logger.info("data[exp]: {}".format(data["s_expression"]))
+    label = []
+    for ans in data["answer"]:
+        label.append(ans["answer_argument"])
+    answer=None
+    if str(data["id"]) not in output:
+        if 'response' in exp_result[str(data["id"])]:
+            gene_exps = exp_result[str(data["id"])]['response']
+        else:
+            gene_exps = exp_result[str(data["id"])]
+        if "form:" in gene_exps:
+            gene_exps =  gene_exps.split("form:")[1].strip()
+        if "could be:" in gene_exps:
+            gene_exps = gene_exps.split("could be:")[1].strip()
+        if "Question:" in gene_exps:
+            gene_exps = gene_exps.split("Question:")[0].strip()
+        
+        logger.info("gene_exp: {}".format(gene_exps))
+        two_hop_rela_dict = {}
+        answer_candi = []
+        removed_none_candi = []
+        answer_to_grounded_dict = {}
+        scouts = [gene_exps]
+        for idx, gene_exp in enumerate(scouts):
+            try:
+                join_num = number_of_join(gene_exp)
+                if join_num > 5:
+                    continue
+                if join_num > 3:
+                    top_mid = 5
+                else:
+                    top_mid = 15
+                found_names = find_friend_name(gene_exp, data["question"])
+                found_mids = from_fn_to_id_set(found_names, data["question"], name_to_id_dict, bm25_all_fns, all_fns)
+                found_mids = [mids[:top_mid] for mids in found_mids]
+                mid_combinations = list(itertools.product(*found_mids))
+                logger.info("all_iters: {}".format(mid_combinations))
+                for mid_iters in mid_combinations:
+                    replaced_exp = convz_fn_to_mids(gene_exp, found_names, mid_iters)
+                    answer, two_hop_rela_dict, bounded_exp = bound_to_existed(data["question"], replaced_exp, mid_iters,
+                                                                            two_hop_rela_dict, relationship_to_enti,
+                                                                            hsearcher, rela_corpus, relationships)
+                    answer_candi.append(answer)
+                    if answer is not None:
+                        answer_to_grounded_dict[tuple(answer)] = bounded_exp
+                for ans in answer_candi:
+                    if ans != None:
+                        removed_none_candi.append(ans)
+                if not removed_none_candi:
+                    answer = None
+                else:
+                    count_dict = Counter([tuple(candi) for candi in removed_none_candi])
+                    logger.info("count_dict: {}".format(count_dict))
+                    answer = max(count_dict, key=count_dict.get)
+            except:
+                if not removed_none_candi:
+                    answer = None
+                else:
+                    count_dict = Counter([tuple(candi) for candi in removed_none_candi])
+                    logger.info("count_dict: {}".format(count_dict))
+                    answer = max(count_dict, key=count_dict.get)
+            output[str(data["id"])]={}
+            output[str(data["id"])]["answer"]=answer
+            output[str(data["id"])]["label"]=label
+    else:
+        answer=output[str(data["id"])]["answer"]
+    logger.info("predicted_answer: {}".format(answer))
+    logger.info("label: {}".format(label))
+    number_of_get_answer += 1
+    logger.info("number of get answer: {}".format(number_of_get_answer))
+    logger.info("================================================================")  
+    return answer, label
+    
+
+
+def process_result(data_batch,hsearcher,rela_corpus, relationships, name_to_id_dict,bm25_all_fns, all_fns,
+                            relationship_to_enti, exp_result=None,output=None,result_path=None):
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_data = {executor.submit(process_data, data, hsearcher, rela_corpus, relationships, name_to_id_dict, bm25_all_fns, all_fns, relationship_to_enti, exp_result, output, result_path): data for data in data_batch}
+        for future in concurrent.futures.as_completed(future_to_data):
+            data = future_to_data[future]
+            try:
+                answer, label = future.result()
+                # 在这里处理返回的结果，更新 correct, total, no_ans 等变量
+            except Exception as exc:
+                print('%r generated an exception: %s' % (data, exc))
+    json.dump(output, open(result_path, 'w'), indent=4)
+
+def all_combiner_evaluation(data_batch, hsearcher, rela_corpus, relationships, name_to_id_dict,bm25_all_fns, all_fns,
+                            relationship_to_enti, exp_result=None,output=None,result_path=None):
     correct = [0] * 6
     total = [0] * 6
     no_ans = [0] * 6
     for data in data_batch:
-        # if data["level"]!="i.i.d.":
-        #     continue
         if str(data["id"]) not in exp_result:
             continue
         logger.info("==========")
@@ -464,89 +469,25 @@ def all_combiner_evaluation(data_batch, selected_quest_compare, selected_quest_c
         label = []
         for ans in data["answer"]:
             label.append(ans["answer_argument"])
-        """
-        if not retrieval:
-            gene_type = type_generator(data["question"], prompt_type, api_key, LLM_engine)
-            logger.info("gene_type: {}".format(gene_type))
-        else:
-            gene_type = None
-
-        if gene_type == "Comparison":
-            gene_exps = ep_generator(data["question"],
-                                     list(set(selected_quest_compare) | set(selected_quest)),
-                                     temp, que_to_s_dict_train, question_to_mid_dict, api_key, LLM_engine,
-                                     retrieval=retrieval, corpus=corpus, nlp_model=nlp_model,
-                                     bm25_train_full=bm25_train_full, retrieve_number=retrieve_number)
-        else:
-            gene_exps = ep_generator(data["question"],
-                                     list(set(selected_quest_compose) | set(selected_quest)),
-                                     temp, que_to_s_dict_train, question_to_mid_dict, api_key, LLM_engine,
-                                     retrieval=retrieval, corpus=corpus, nlp_model=nlp_model,
-                                     bm25_train_full=bm25_train_full, retrieve_number=retrieve_number)
-        exp_result[data["id"]] = gene_exps
-        """
-        #logger.info("gene_exps: {}".format(gene_exps))
-        #number+=1
-        #logger.info("number: {}".format(number))
-        # id = int(data["id"])
-        # logger.info()
+        answer=None
         if str(data["id"]) not in output:
             if 'response' in exp_result[str(data["id"])]:
                 gene_exps = exp_result[str(data["id"])]['response']
-            elif 'answer' in exp_result[str(data["id"])]:
-                gene_exps = exp_result[str(data["id"])]["answer"]
             else:
                 gene_exps = exp_result[str(data["id"])]
-            # logger.info("gene_exp: {}".format(gene_exps))
             if "form:" in gene_exps:
                 gene_exps =  gene_exps.split("form:")[1].strip()
-            if "Form:" in gene_exps:
-                gene_exps = gene_exps.split("Form:")[1].strip()
-            if "Explanation" in gene_exps:
-                gene_exps = gene_exps.split("Explanation")[0].strip()
-            if "is:" in gene_exps:
-                gene_exps = gene_exps.split("is:")[1].strip()
-            if "In other" in gene_exps:
-                gene_exps = gene_exps.split("In other")[0].strip()
-            if "Here's" in gene_exps:
-                gene_exps = gene_exps.split("Here's")[0].strip()
-            if "In this" in gene_exps:
-                gene_exps = gene_exps.split("In this")[0].strip()
-            if "Please" in gene_exps:
-                gene_exps = gene_exps.split("Please")[0].strip()
-            if "couble be:" in gene_exps:
-                gene_exps = gene_exps.split("couble be:")[1].strip()
-            if "Note:" in gene_exps:
-                gene_exps = gene_exps.split("Note:")[0].strip()
-            if "-" in gene_exps:
-                gene_exps = gene_exps.replace("-","")
-            if "on our knowledge:" in gene_exps:
-                gene_exps = gene_exps.split("on our knowledge:")[1].strip()
-            if "would be:" in gene_exps:
-                gene_exps = gene_exps.split("would be:")[1].strip()
-            #if len(gene_exps)>=50:
-            #   print("it's too long")
-            #  continue
-            if "The given query is" in gene_exps or "The logical form of the given query" in gene_exps or "The logical form of the query is a conjunction" in gene_exps:
-                gene_exps = ""
-            # remove head and last \n
-            gene_exps = gene_exps.strip()
-            # take the content before first \n
-            if "\n" in gene_exps:
-                gene_exps = gene_exps.split("\n")[0]
-            if "The logical form of the schema can be represented using first-order logic" in gene_exps:
-                gene_exps = ""
+            if "could be:" in gene_exps:
+                gene_exps = gene_exps.split("could be:")[1].strip()
+            
             logger.info("gene_exp: {}".format(gene_exps))
             two_hop_rela_dict = {}
             answer_candi = []
             removed_none_candi = []
             answer_to_grounded_dict = {}
-            # logger.info("gene_exps: {}".format(gene_exps))
-            #scouts = gene_exps[:6]
             scouts = [gene_exps]
             for idx, gene_exp in enumerate(scouts):
                 try:
-                    # logger.info("gene_exp: {}".format(gene_exp))
                     join_num = number_of_join(gene_exp)
                     if join_num > 5:
                         continue
@@ -560,9 +501,7 @@ def all_combiner_evaluation(data_batch, selected_quest_compare, selected_quest_c
                     mid_combinations = list(itertools.product(*found_mids))
                     logger.info("all_iters: {}".format(mid_combinations))
                     for mid_iters in mid_combinations:
-                        # logger.info("mid_iters: {}".format(mid_iters))
                         replaced_exp = convz_fn_to_mids(gene_exp, found_names, mid_iters)
-
                         answer, two_hop_rela_dict, bounded_exp = bound_to_existed(data["question"], replaced_exp, mid_iters,
                                                                                 two_hop_rela_dict, relationship_to_enti,
                                                                                 hsearcher, rela_corpus, relationships)
@@ -608,7 +547,7 @@ def all_combiner_evaluation(data_batch, selected_quest_compare, selected_quest_c
         logger.info("no_ans: {}".format(no_ans[idx]))
         logger.info(" ")
         logger.info("================================================================")
-        json.dump(output, open(result_path, 'w'), indent=4)
+    json.dump(output, open(result_path, 'w'), indent=4)
     # json.dump(exp_result, open(result_path, 'w'), indent=4)
 
 
@@ -651,6 +590,7 @@ def process_temp_result(temp_result_path):
 
 
 def main():
+    start_time = time.time()
     args = parse_args()
     nlp = spacy.load("en_core_web_sm")
     bm25_searcher = LuceneSearcher('contriever_fb_relation/index_relation_fb')
@@ -658,42 +598,26 @@ def main():
     contriever_searcher = FaissSearcher('contriever_fb_relation/freebase_contriever_index', query_encoder)
     hsearcher = HybridSearcher(contriever_searcher, bm25_searcher)
     rela_corpus = LuceneSearcher('contriever_fb_relation/index_relation_fb')
-    # print(rela_corpus)
-    # print(bm25_searcher)
     dev_data = process_file(args.eva_data_path)
     train_data = process_file(args.train_data_path)
-    que_to_s_dict_train = {data["question"]: data["s_expression"] for data in train_data}
-    question_to_mid_dict = process_file_node(args.train_data_path)
+    # que_to_s_dict_train = {data["question"]: data["s_expression"] for data in train_data}
+    # question_to_mid_dict = process_file_node(args.train_data_path)
     exp_result=json.load(open(args.exp_result))
     result_path = args.exp_result.split(".json")[0]+"_result.json"
     temp_result_path = args.exp_result.split(".json")[0]+"_temp_result.json"
     output = process_temp_result(temp_result_path)
-#    exp_result=json.load(open("/data/tianyuhang/repos/SE-KBQA/GrailQA/outputs/grailqa_dev_expression_result_beam_search_3hop_v3_llama_v1.json"))
     exp_result = dict(list(exp_result.items())[args.checkpoint:])
-    if not args.retrieval:
-        selected_quest_compose, selected_quest_compare, selected_quest = select_shot_prompt_train(train_data, args.shot_num)
-    else:
-        selected_quest_compose = []
-        selected_quest_compare = []
-        selected_quest = []
-    all_ques = selected_quest_compose + selected_quest_compare
     corpus = [data["question"] for data in train_data]
+    end_time = time.time()
+    logger.info("load first data time: {}".format(end_time-start_time))
+    start_time = time.time()
     tokenized_train_data = []
     for doc in corpus:
         nlp_doc = nlp(doc)
         tokenized_train_data.append([token.lemma_ for token in nlp_doc])
-    bm25_train_full = BM25Okapi(tokenized_train_data)
-    if not args.retrieval:
-        prompt_type = ''
-        random.shuffle(all_ques)
-        for que in all_ques:
-            prompt_type = prompt_type + "Question: " + que + "\nType of the question: "
-            if que in selected_quest_compose:
-                prompt_type += "Composition\n"
-            else:
-                prompt_type += "Comparison\n"
-    else:
-        prompt_type = ''
+    end_time = time.time()
+    logger.info("load second data time: {}".format(end_time-start_time))
+    start_time = time.time()
     print("Begin to process fb_roles")
     with open(args.fb_roles_path) as f:
         lines = f.readlines()
@@ -708,6 +632,9 @@ def main():
         relationship_to_enti[info[1]] = [info[0], info[2]]
 
     print("Procss fb_roles done!")
+    end_time = time.time()
+    logger.info("load third data time: {}".format(end_time-start_time))
+    start_time = time.time()
     with open(args.surface_map_path) as f:
         lines = f.readlines()
     name_to_id_dict = {}
@@ -721,16 +648,20 @@ def main():
         else:
             name_to_id_dict[name] = {}
             name_to_id_dict[name][mid] = score
+    end_time = time.time()
+    logger.info("load fourth data time: {}".format(end_time-start_time))
+    start_time = time.time()
     all_fns = list(name_to_id_dict.keys())
     tokenized_all_fns = [fn.split() for fn in all_fns]
     bm25_all_fns = BM25Okapi(tokenized_all_fns)
+    end_time = time.time()
+    logger.info("load fifth data time: {}".format(end_time-start_time))
     print("Load Done!")
-    #dev_data = dev_data[:2000]
-    all_combiner_evaluation(dev_data, selected_quest_compose, selected_quest_compare, selected_quest, prompt_type,
-                            hsearcher, rela_corpus, relationships, args.temperature, que_to_s_dict_train,
-                            question_to_mid_dict, args.api_key, args.engine, name_to_id_dict, bm25_all_fns,
-                            all_fns, relationship_to_enti, retrieval=args.retrieval, corpus=corpus, nlp_model=nlp,
-                            bm25_train_full=bm25_train_full, retrieve_number=args.shot_num,exp_result=exp_result,output=output,result_path=result_path)
+    process_result(dev_data, hsearcher, rela_corpus, relationships, name_to_id_dict, bm25_all_fns, all_fns,
+                   relationship_to_enti, exp_result=exp_result,output=output,result_path=result_path)
+    # all_combiner_evaluation(dev_data, 
+    #                         hsearcher, rela_corpus, relationships, name_to_id_dict, bm25_all_fns,
+    #                         all_fns, relationship_to_enti, exp_result=exp_result,output=output,result_path=result_path)
 
 if __name__=="__main__":
     main()

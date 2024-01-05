@@ -1,5 +1,5 @@
 import openai
-openai.api_base = "http://10.1.114.10:8090/v1"
+openai.api_base = "http://10.1.114.10:8091/v1"
 openai.api_key = "none"
 
 # 使用流式回复的请求

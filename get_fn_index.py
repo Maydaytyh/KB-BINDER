@@ -1,11 +1,10 @@
 from simcse import SimCSE
 import torch
 import pickle 
-
+import joblib
 
 model = SimCSE("princeton-nlp/sup-simcse-roberta-large")
-model.batch_size = 4096
-model.device = torch.device("cuda:1")
+model.device = torch.device("cuda:6")
 
 with open("data/surface_map_file_freebase_complete_all_mention") as f:
     lines = f.readlines()
@@ -24,6 +23,15 @@ all_fns = list(name_to_id_dict.keys())
 # tokenized_all_fns = [fn.split() for fn in all_fns]
 print(len(all_fns))
 model.build_index(all_fns,batch_size=64)
+# joblib.dump(model.index, "data/fn_index_1.pkl")
+# with open("data/fn_index_1.pkl", "wb") as f:
+#     pickle.dump(model.index, f)
+# 假设我们想要将 model.index 分为大小为 1000 的块
+chunk_size = 10000
+num_chunks = len(model.index) // chunk_size + 1
 
-with open("data/fn_index.pkl", "wb") as f:
-    pickle.dump(model.index, f)
+for i in range(num_chunks):
+    start = i * chunk_size
+    end = min((i + 1) * chunk_size, len(model.index))
+    chunk = model.index[start:end]
+    joblib.dump(chunk, f"data/fn_index_{i+1}.pkl")
