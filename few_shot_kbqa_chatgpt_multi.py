@@ -358,11 +358,14 @@ def process_file_codex_output(filename_before, filename_after):
     return codex_eps_dict_before
 
 number_of_get_answer = 0 
+number_of_correct = 0
+numebr_of_no_ans = 0
 def process_data(data,hsearcher, rela_corpus, relationships, name_to_id_dict,bm25_all_fns, all_fns,
                             relationship_to_enti, exp_result=None,output=None,result_path=None):
     if str(data["id"]) not in exp_result:
         return
     global number_of_get_answer
+    global number_of_correct
     logger.info("==========")
     logger.info("data[id]: {}".format(data["id"]))
     logger.info("data[question]: {}".format(data["question"]))
@@ -436,6 +439,12 @@ def process_data(data,hsearcher, rela_corpus, relationships, name_to_id_dict,bm2
     logger.info("label: {}".format(label))
     number_of_get_answer += 1
     logger.info("number of get answer: {}".format(number_of_get_answer))
+    if ans is None:
+        numebr_of_no_ans += 1
+    elif set(answer) == set(label):
+        number_of_correct += 1
+    logger.info("number of correct: {}".format(number_of_correct))
+    logger.info("number of no ans: {}".format(numebr_of_no_ans))
     logger.info("================================================================")  
     return answer, label
     
